@@ -3,57 +3,163 @@ const db = require('../config/db');
 const { getTableName, getMetadataTableName } = require('../utils/tbNameMapper');
 
 const addProperty = async (req, res) => {
-    const { structureType, propertyName, displayName, isRequired, isMultiValued, singleValuedDataType, lookupTableId, newLookupTableName } = req.body;
-    const tableName = getTableName(structureType);
-    const metadataTableName = getMetadataTableName(structureType);
+  const {
+    structureType,
+    propertyName,
+    displayName,
+    isRequired,
+    isMultiValued,
+    singleValuedDataType,
+    lookupTableId,
+    newLookupTableName,
+    initialData  // Including initialData here to be used later
+} = req.body;
+  const tableName = getTableName(structureType);
+  const metadataTableName = getMetadataTableName(structureType);
 
-    try {
+  try {
       let actualDataType = singleValuedDataType;
-      let actualLookupTableId = null;
+      let actualLookupTableId = lookupTableId;
 
-      // Handling the creation of a new lookup table or use an existing one
-      if (isMultiValued) {
-        actualDataType = 'INT';  // Default data type for multivalued properties
-        if (!lookupTableId && newLookupTableName) {
-          const lookupResult = await db.query(
-            `INSERT INTO tbLookupTables (tableName) VALUES ($1) RETURNING tableId`, 
-            [newLookupTableName]
-          );
-          actualLookupTableId = lookupResult.rows[0].tableId;
-        } else if (lookupTableId) {
-          actualLookupTableId = lookupTableId;
-        } else {
-          throw new Error("Missing lookupTableId for a multivalued property.");
-        }
-      } else if (!singleValuedDataType) {
-        throw new Error("Missing singleValuedDataType for single-valued property.");
+      // Handle the creation of a new lookup table or use an existing one
+      if (newLookupTableName) {
+          actualLookupTableId = await createAndPopulateLookupTable(newLookupTableName, initialData);
       }
+
+      if (!singleValuedDataType && !isMultiValued) {
+        return res.status(400).send("Missing singleValuedDataType for single-valued property.");
+      }
+
+      /*if(!actualDataType && isMultiValued){
+        actualDataType = 'INT';
+      }*/
+
+      if(!isMultiValued && actualLookupTableId && actualDataType != 'INT'){
+        return res.status(400).send("Single valued type needs to be INT for referecning provided lookup table");
+      }
+
+      // Create and modify structure table based on the property type
+      await createOrUpdateStructureTable(tableName, propertyName, actualDataType, actualLookupTableId, isMultiValued, structureType);
 
       // Insert property details into metadata table
       await db.query(
-        `INSERT INTO ${metadataTableName} (propertyName, display_name, is_required, isMultiValued, singleValuedDataType, lookupTable) 
+        `INSERT INTO ${metadataTableName} (propertyName, displayName, isRequired, isMultiValued, singleValuedDataType, lookupTableId) 
         VALUES ($1, $2, $3, $4, $5, $6)`,
         [propertyName, displayName, isRequired, isMultiValued, actualDataType, actualLookupTableId]
-      );
+    );
 
-      // Alter the structure table based on the property type
-      if (!isMultiValued) {
-        let columnDefinition = `${propertyName} ${actualDataType}`;
-        if (lookupTableId) {  // Add foreign key constraint if lookup table ID is provided
-            columnDefinition += `, ADD CONSTRAINT fk_${propertyName} FOREIGN KEY (${propertyName}) REFERENCES tbLookupTables(tableId)`;
-        }
-        await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition};`);
-        res.send(`Single-valued property added: ${propertyName} with datatype ${actualDataType} in ${tableName}`);
-    } else {
-        // For multi-valued, we assume a junction table setup will be handled separately
-        res.send(`Multivalued property metadata added, prepare for junction table configuration.`);
-      }
-    } catch (error) {
+      res.send(`Property added: ${propertyName} with datatype ${actualDataType} referencing ${actualLookupTableId}`);
+  } catch (error) {
       console.error(error);
       res.status(500).send('Error adding new property');
-    }
+  }
 };
 
+async function createAndPopulateLookupTable(tableName, initialData) {
+  const tableId = await createLookupTable(tableName);
+  await populateLookupTable(tableName, initialData);
+  return tableId;
+}
+
+async function createLookupTable(tableName) {
+  const lookupTableInsertResult = await db.query(
+      `INSERT INTO tbLookupTables (tableName) VALUES ($1) RETURNING tableId`,
+      [tableName]
+  );
+  return lookupTableInsertResult.rows[0].tableid;
+}
+
+async function populateLookupTable(tableName, initialData) {
+  const createTableSQL = `
+      CREATE TABLE ${tableName} (
+          ID SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          notes TEXT
+      );
+  `;
+  await db.query(createTableSQL);
+
+  if (initialData && initialData.length > 0) {
+      const insertSQL = `INSERT INTO ${tableName} (name, notes) VALUES ($1, $2)`;
+      for (let item of initialData) {
+          await db.query(insertSQL, [item.name, item.notes || null]);
+      }
+  }
+}
+
+async function createOrUpdateStructureTable(tableName, propertyName, dataType, lookupTableId, isMultiValued, structureType) {
+  try {
+      if (isMultiValued) {
+          await createJunctionTable(structureType, propertyName, tableName, lookupTableId);
+      } else {
+          let columnDefinition = `${propertyName} ${dataType}`;
+          if (dataType === 'INT' && lookupTableId) {
+              const lookupTableName = await getLookupTableName(lookupTableId);
+              if (!lookupTableName) {
+                throw new Error(`Lookup table name could not be resolved for lookupTableId: ${lookupTableId}`);
+            }
+              columnDefinition += `, ADD CONSTRAINT fk_${propertyName} FOREIGN KEY (${propertyName}) REFERENCES ${lookupTableName}(ID) ON DELETE SET NULL`;
+          }
+          if (!tableName) {
+            throw new Error("tableName is undefined, cannot alter table");
+        }
+          await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition};`);
+      }
+  } catch (error) {
+      console.error(`Error in createOrUpdateStructureTable: ${error.message}`);
+      throw error; // Propagate the error up to be handled by the caller
+  }
+}
+
+async function createJunctionTable(structureType, propertyName, tableName, lookupTableId) {
+  try {
+      const lookupTableName = await getLookupTableName(lookupTableId);
+      const junctionTableName = `tbjn${structureType}${propertyName}`;
+      const junctionTableSQL = `
+          CREATE TABLE ${junctionTableName} (
+              ${structureType}ID INT,
+              ${propertyName}ID INT,
+              PRIMARY KEY (${structureType}ID, ${propertyName}ID),
+              FOREIGN KEY (${structureType}ID) REFERENCES tb${structureType}Structure(${structureType}ID) ON DELETE CASCADE,
+              FOREIGN KEY (${propertyName}ID) REFERENCES ${lookupTableName}(ID) ON DELETE CASCADE
+          );
+      `;
+      await db.query(junctionTableSQL);
+  } catch (error) {
+      console.error(`Error in createJunctionTable: ${error.message}`);
+      throw error; // Propagate the error up to be handled by the caller
+  }
+}
+
+
+async function createJunctionTable(structureType, propertyName, tableName, lookupTableId) {
+  const lookupTableName = await getLookupTableName(lookupTableId);
+  const junctionTableName = `tbjn${structureType}${propertyName}`;
+  const junctionTableSQL = `
+      CREATE TABLE ${junctionTableName} (
+          ${structureType}ID INT,
+          ${propertyName}ID INT,
+          PRIMARY KEY (${structureType}ID, ${propertyName}ID),
+          FOREIGN KEY (${structureType}ID) REFERENCES tb${structureType}Structure(${structureType}ID) ON DELETE CASCADE,
+          FOREIGN KEY (${propertyName}ID) REFERENCES ${lookupTableName}(ID) ON DELETE CASCADE
+      );
+  `;
+  await db.query(junctionTableSQL);
+}
+
+
+async function getLookupTableName(lookupTableId) {
+  console.log(`Fetching lookup table name for ID: ${lookupTableId}`);
+  const result = await db.query(`SELECT tableName FROM tbLookupTables WHERE tableId = $1`, [lookupTableId]);
+  console.log(`Query result:`, result.rows);
+  if (result.rows.length === 0) {
+      console.error(`No lookup table found for ID: ${lookupTableId}`);
+      throw new Error(`Lookup table name could not be resolved for lookupTableId: ${lookupTableId}`);
+  }
+  return result.rows[0].tablename;
+}
+
+
 module.exports = {
-  addProperty
+addProperty
 };
