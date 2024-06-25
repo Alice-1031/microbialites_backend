@@ -1,7 +1,7 @@
 // /src/utils/tableNameMapper.js
 
 /**
- * Generates table names based on the structure type.
+ * Generates property table names based on the structure type. eg tbMegaProperties, tbMicroProperties etc.
  * @param {string} structureType - The type of the structure (e.g., 'Mega', 'Micro').
  */
 const getTableName = structureType => {

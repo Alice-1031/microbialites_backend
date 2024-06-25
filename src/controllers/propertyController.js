@@ -10,7 +10,7 @@ const addProperty = async (req, res) => {
     isRequired,
     isMultiValued,
     singleValuedDataType,
-    lookupTableId,
+    lookupTableId, //would it be better to pass the name directly?
     newLookupTableName,
     initialData  // Including initialData here to be used later
 } = req.body;
@@ -30,10 +30,6 @@ const addProperty = async (req, res) => {
         return res.status(400).send("Missing singleValuedDataType for single-valued property.");
       }
 
-      /*if(!actualDataType && isMultiValued){
-        actualDataType = 'INT';
-      }*/
-
       if(!isMultiValued && actualLookupTableId && actualDataType != 'INT'){
         return res.status(400).send("Single valued type needs to be INT for referecning provided lookup table");
       }
@@ -48,7 +44,7 @@ const addProperty = async (req, res) => {
         [propertyName, displayName, isRequired, isMultiValued, actualDataType, actualLookupTableId]
     );
 
-      res.send(`Property added: ${propertyName} with datatype ${actualDataType} referencing ${actualLookupTableId}`);
+      res.send(`Property added: ${propertyName} with datatype ${actualDataType} referencing lookuptable id: ${actualLookupTableId}`);
   } catch (error) {
       console.error(error);
       res.status(500).send('Error adding new property');
@@ -62,14 +58,20 @@ async function createAndPopulateLookupTable(tableName, initialData) {
 }
 
 async function createLookupTable(tableName) {
+  try{
   const lookupTableInsertResult = await db.query(
       `INSERT INTO tbLookupTables (tableName) VALUES ($1) RETURNING tableId`,
       [tableName]
   );
   return lookupTableInsertResult.rows[0].tableid;
+  }catch (error) {
+    console.error(`Error in createLookupTable: ${error.message}`);
+    throw error; // Propagate the error up to be handled by the caller
+  }
 }
 
 async function populateLookupTable(tableName, initialData) {
+  try{
   const createTableSQL = `
       CREATE TABLE ${tableName} (
           ID SERIAL PRIMARY KEY,
@@ -85,12 +87,16 @@ async function populateLookupTable(tableName, initialData) {
           await db.query(insertSQL, [item.name, item.notes || null]);
       }
   }
+  }catch (error) {
+    console.error(`Error in populateLookupTable: ${error.message}`);
+    throw error; // Propagate the error up to be handled by the caller
+  }
 }
 
 async function createOrUpdateStructureTable(tableName, propertyName, dataType, lookupTableId, isMultiValued, structureType) {
   try {
       if (isMultiValued) {
-          await createJunctionTable(structureType, propertyName, tableName, lookupTableId);
+          await createJunctionTable(structureType, propertyName, lookupTableId);
       } else {
           let columnDefinition = `${propertyName} ${dataType}`;
           if (dataType === 'INT' && lookupTableId) {
@@ -111,7 +117,7 @@ async function createOrUpdateStructureTable(tableName, propertyName, dataType, l
   }
 }
 
-async function createJunctionTable(structureType, propertyName, tableName, lookupTableId) {
+async function createJunctionTable(structureType, propertyName, lookupTableId) {
   try {
       const lookupTableName = await getLookupTableName(lookupTableId);
       const junctionTableName = `tbjn${structureType}${propertyName}`;
@@ -132,22 +138,12 @@ async function createJunctionTable(structureType, propertyName, tableName, looku
 }
 
 
-async function createJunctionTable(structureType, propertyName, tableName, lookupTableId) {
-  const lookupTableName = await getLookupTableName(lookupTableId);
-  const junctionTableName = `tbjn${structureType}${propertyName}`;
-  const junctionTableSQL = `
-      CREATE TABLE ${junctionTableName} (
-          ${structureType}ID INT,
-          ${propertyName}ID INT,
-          PRIMARY KEY (${structureType}ID, ${propertyName}ID),
-          FOREIGN KEY (${structureType}ID) REFERENCES tb${structureType}Structure(${structureType}ID) ON DELETE CASCADE,
-          FOREIGN KEY (${propertyName}ID) REFERENCES ${lookupTableName}(ID) ON DELETE CASCADE
-      );
-  `;
-  await db.query(junctionTableSQL);
-}
-
-
+/**
+ * 
+ * @param {*} lookupTableId 
+ * @returns tablename 
+ * this ensures integrity by returning tablename from tableid
+ */
 async function getLookupTableName(lookupTableId) {
   console.log(`Fetching lookup table name for ID: ${lookupTableId}`);
   const result = await db.query(`SELECT tableName FROM tbLookupTables WHERE tableId = $1`, [lookupTableId]);
@@ -159,7 +155,21 @@ async function getLookupTableName(lookupTableId) {
   return result.rows[0].tablename;
 }
 
+/**
+ * Fetch all lookup tables from the database and return them.
+ */
+const getLookupTables = async (req, res) => {
+  try {
+      const result = await db.query('SELECT tableId, tableName FROM tbLookupTables');
+      res.json(result.rows); // Send the lookup tables as JSON
+  } catch (error) {
+      console.error('Failed to fetch lookup tables:', error);
+      res.status(500).send('Failed to fetch lookup tables');
+  }
+};
+
 
 module.exports = {
-addProperty
+addProperty,
+getLookupTables
 };
