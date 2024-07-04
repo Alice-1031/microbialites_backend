@@ -2,6 +2,12 @@
 const db = require('../config/db');
 const { getTableName, getMetadataTableName } = require('../utils/tbNameMapper');
 
+/**
+ * 
+ * @param {*} req JSON user input on property metadata
+ * @param {*} res success or failure text response
+ * @returns text response
+ */
 const addProperty = async (req, res) => {
   const {
     structureType,
@@ -48,6 +54,86 @@ const addProperty = async (req, res) => {
   } catch (error) {
       console.error(error);
       res.status(500).send('Error adding new property');
+  }
+};
+
+const deleteProperty = async (req, res) => {
+  const { propertyName, structureType, deleteLkp } = req.body;
+  const tableName = getTableName(structureType);
+  const metadataTableName = getMetadataTableName(structureType);
+  const fkConstraintName = `fk_${propertyName}`;
+
+  try {
+      // Start transaction
+      await db.query('BEGIN');
+
+      const metadataQuery = await db.query(
+          `SELECT isMultiValued, lookupTableId FROM ${metadataTableName} WHERE propertyName = $1`,
+          [propertyName]
+      );
+
+      if (metadataQuery.rows.length === 0) {
+          return res.status(404).send('Property not found');
+      }
+
+      const { ismultivalued, lookuptableid } = metadataQuery.rows[0];
+      //console.log(ismultivalued,lookuptableid );
+
+      // Delete metadata entry
+      await db.query(`DELETE FROM ${metadataTableName} WHERE propertyName = $1`, [propertyName]);
+
+      // Handle deletion of junction tables for multi-valued properties
+      if (ismultivalued) {
+          const junctionTableName = `tbjn${structureType}${propertyName}`;
+          await db.query(`DROP TABLE IF EXISTS ${junctionTableName}`);
+      }
+
+        // Check if the lookup table needs to be deleted
+        if (lookuptableid && deleteLkp) {
+
+            let lookupTableName;
+            try {
+              lookupTableName = await getLookupTableName(lookuptableid);
+            } catch (error) {
+              await db.query('ROLLBACK');
+              return res.status(404).send(error.message);
+            }
+
+            const lookupTableExistsQuery = await db.query(
+                `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+                [lookupTableName]
+            );
+            const lookupTableExists = lookupTableExistsQuery.rows[0].exists;
+
+            if (!lookupTableExists) {
+                await db.query('ROLLBACK');
+                return res.status(404).send('Lookup table does not exist orphaned record in tblookuptables');
+            }
+
+            if (await isLookupTableExclusive(lookuptableid, metadataTableName)) {
+                await db.query(`ALTER TABLE tbmegaproperties DROP CONSTRAINT IF EXISTS ${fkConstraintName}`); //remove fk constraint on singlevalued properties before table deletion
+                await db.query(`DROP TABLE IF EXISTS ${lookupTableName}`);
+                await db.query(`DELETE FROM tbLookupTables WHERE tableId = $1`, [lookuptableid]);
+                console.log("deleting tblkps")
+            }else{
+              return res.status(409).send('Lookup table is referenced by another property so cannot be deleted');
+            }
+        }
+
+        // Remove property column from the main table if it's single-valued
+      if (!ismultivalued) {
+        await db.query(`ALTER TABLE ${tableName} DROP COLUMN IF EXISTS ${propertyName}`);
+      }
+
+ 
+      // Commit transaction
+      await db.query('COMMIT');
+
+      res.send('Property deleted successfully');
+  } catch (error) {
+      await db.query('ROLLBACK');
+      console.error('Failed to delete property:', error);
+      res.status(500).send('Error deleting property');
   }
 };
 
@@ -168,8 +254,25 @@ const getLookupTables = async (req, res) => {
   }
 };
 
+async function isLookupTableExclusive(lookupTableId, metadataTableName){
+  // Query the metadata table to find how many entries reference the lookupTableId
+  const query = `
+  SELECT COUNT(*) AS count
+  FROM ${metadataTableName}
+  WHERE lookupTableId = $1
+`;
+  const result = await db.query(query, [lookupTableId]);
+  const count = parseInt(result.rows[0].count, 10); // ensure it's an integer
+  console.log(`Lookup table ID ${lookupTableId} is used by ${count} properties.`);
+
+  return count < 1;
+  // If the count is 0(because we are deleting the metadata table row entry that references the table first), then the lookup table is exclusive to the current property
+  //return result.rows[0].count === 1;
+}
+
 
 module.exports = {
 addProperty,
-getLookupTables
+getLookupTables,
+deleteProperty
 };
