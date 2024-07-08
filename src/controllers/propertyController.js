@@ -48,7 +48,7 @@ const addProperty = async (req, res) => {
         `INSERT INTO ${metadataTableName} (propertyName, displayName, isRequired, isMultiValued, singleValuedDataType, lookupTableId) 
         VALUES ($1, $2, $3, $4, $5, $6)`,
         [propertyName, displayName, isRequired, isMultiValued, actualDataType, actualLookupTableId]
-    );
+      );
 
       res.send(`Property added: ${propertyName} with datatype ${actualDataType} referencing lookuptable id: ${actualLookupTableId}`);
   } catch (error) {
