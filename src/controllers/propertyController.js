@@ -79,7 +79,7 @@ const deleteProperty = async (req, res) => {
       const { ismultivalued, lookuptableid } = metadataQuery.rows[0];
       //console.log(ismultivalued,lookuptableid );
 
-      // Delete metadata entry
+      // Delete metadata entry first as it references lkp table
       await db.query(`DELETE FROM ${metadataTableName} WHERE propertyName = $1`, [propertyName]);
 
       // Handle deletion of junction tables for multi-valued properties
