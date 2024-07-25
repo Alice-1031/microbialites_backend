@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 const bcrypt = require('bcrypt');
 const saltRounds = 10;  // The cost factor controls how much time is needed to calculate a single BCrypt hash.
 

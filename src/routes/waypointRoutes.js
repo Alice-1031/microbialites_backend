@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getAllWaypoints} = require('../controllers/waypointController');
+const { getAllWaypoints, getAllFilteredWaypoints} = require('../controllers/waypointController');
 
 
 router.get('/get', getAllWaypoints);
+router.get('/filter',getAllFilteredWaypoints);
 
 
 
