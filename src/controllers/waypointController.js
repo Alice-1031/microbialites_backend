@@ -11,9 +11,8 @@ const getAllWaypoints = async (req, res) => {
 }
 
 
-
 const getAllFilteredWaypoints = async (req, res) => {
-    const { types, minAge, maxAge } = req.query;
+    const { types, period_name } = req.query;
 
     // Convert types to an array of numbers, ensuring no invalid entries
     const typeArray = types ? types.split(',').map(type => {
@@ -22,22 +21,21 @@ const getAllFilteredWaypoints = async (req, res) => {
         return num;
     }) : [];
 
-    // Validate age inputs
-    const minAgeInt = parseInt(minAge, 10) || 0;
-    const maxAgeInt = parseInt(maxAge, 10) || 2147483647;
-    if (isNaN(minAgeInt) || isNaN(maxAgeInt) || minAgeInt > maxAgeInt) {
-        return res.status(400).send("Invalid age range");
-    }
+    try {
+        let periodPath = null;
+        if (period_name) {
+            // Fetch the path for the given period name
+            const periodResult = await db.query('SELECT path FROM geological_periods WHERE period_name = $1', [period_name]);
+            if (periodResult.rows.length === 0) {
+                return res.status(404).send("Period not found");
+            }
+            periodPath = periodResult.rows[0].path + '%';
+        }
 
-    console.log("Received types:", typeArray);
-    console.log("Received minAge:", minAgeInt);
-    console.log("Received maxAge:", maxAgeInt);
+        console.log("received types:", typeArray);
+        console.log("received period_name:", period_name);
 
-    let query;
-    let queryParams;
-
-    if (typeArray.length > 0) {
-        query = `
+        let query = `
             SELECT
                 w.wayptid,
                 w.lat,
@@ -46,6 +44,14 @@ const getAllFilteredWaypoints = async (req, res) => {
             FROM
                 tbWaypt w
                 INNER JOIN tbmegastructure m ON w.wayptid = m.wayptid
+        `;
+
+        let joinCondition = "";
+        let whereCondition = "";
+        let queryParams = [];
+
+        if (typeArray.length > 0) {
+            joinCondition += `
                 INNER JOIN (
                     SELECT
                         mt.megaid
@@ -56,41 +62,32 @@ const getAllFilteredWaypoints = async (req, res) => {
                     HAVING
                         ARRAY_AGG(mt.microbialitetypesid ORDER BY mt.microbialitetypesid) = $1
                 ) AS filtered_megaids ON m.megaid = filtered_megaids.megaid
-                LEFT JOIN tbmegaproperties p ON m.megaid = p.megaid
-            WHERE
-                p.age BETWEEN $2 AND $3
-            GROUP BY
-                w.wayptid;
-        `;
-        queryParams = [typeArray, minAgeInt, maxAgeInt];
-    } else {
-        query = `
-            SELECT
-                w.wayptid,
-                w.lat,
-                w.long,
-                array_agg(DISTINCT m.megaid) AS matching_megaid_list
-            FROM
-                tbWaypt w
-                INNER JOIN tbmegastructure m ON w.wayptid = m.wayptid
-                LEFT JOIN tbmegaproperties p ON m.megaid = p.megaid
-            WHERE
-                p.age BETWEEN $1 AND $2
-            GROUP BY
-                w.wayptid;
-        `;
-        queryParams = [minAgeInt, maxAgeInt];
-    }
+            `;
+            queryParams.push(typeArray);
+        }
 
-    try {
+        if (periodPath) {
+            joinCondition += `
+                LEFT JOIN tbmegaproperties p ON m.megaid = p.megaid
+                LEFT JOIN geological_periods gp ON p.age = gp.id
+            `;
+            whereCondition += ` WHERE gp.path LIKE $${queryParams.length + 1}`;
+            queryParams.push(periodPath);
+        }
+
+        query += joinCondition;
+        query += whereCondition;
+        query += " GROUP BY w.wayptid";
+
         const result = await db.query(query, queryParams);
-        console.log("Query result:", result.rows);
         res.json(result.rows);
     } catch (error) {
         console.error("Error fetching filtered waypoints:", error);
         res.status(500).send("Failed to fetch filtered waypoints");
     }
 };
+
+
 
 
 
