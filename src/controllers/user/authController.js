@@ -42,20 +42,33 @@ const verifyToken = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded; // Attach decoded token to request
+        req.user = { ...decoded, roles: Array.isArray(decoded.roles) ? decoded.roles : [decoded.roles] }; // Ensure roles is an array
+        console.log("Decoded token:", decoded); // Log decoded token
         next();
     } catch (err) {
+        console.error('Token verification failed:', err);
         return res.status(401).json({ message: 'Failed to authenticate token' });
     }
 };
 
 
-const checkRole = (roles) => (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.roles)) {
+const checkRole = (requiredRoles) => (req, res, next) => {
+    // Check if req.user and req.user.roles are defined and an array
+    if (!req.user || !Array.isArray(req.user.roles)) {
         return res.status(403).json({ message: 'Forbidden' });
     }
-    next();
+
+    // Check if the user's roles array includes at least one of the required roles
+    const hasRequiredRole = req.user.roles.some(role => requiredRoles.includes(role));
+
+    if (!hasRequiredRole) {
+        console.log("User does not have required role");
+        return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    next(); // User has the required role, proceed to the next middleware
 };
+
 
 module.exports = {
     login,

@@ -87,11 +87,20 @@ const getAllFilteredWaypoints = async (req, res) => {
     }
 };
 
-
+const getAllPeriodNames = async (req, res) => {
+    try {
+        const result = await db.query('SELECT period_name FROM geological_periods');
+        res.json(result.rows.map(row => row.period_name));
+    } catch (error) {
+        console.error("Error fetching period names:", error);
+        res.status(500).send("Failed to fetch period names");
+    }
+};
 
 
 
 module.exports = {
     getAllWaypoints,
-    getAllFilteredWaypoints
+    getAllFilteredWaypoints,
+    getAllPeriodNames
 }
