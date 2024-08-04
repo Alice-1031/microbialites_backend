@@ -10,7 +10,6 @@ const getAllWaypoints = async (req, res) => {
     }
 }
 
-
 const getAllFilteredWaypoints = async (req, res) => {
     const { types, period_name } = req.query;
 
@@ -32,39 +31,34 @@ const getAllFilteredWaypoints = async (req, res) => {
             periodPath = periodResult.rows[0].path + '%';
         }
 
-        console.log("received types:", typeArray);
-        console.log("received period_name:", period_name);
-
         let query = `
             SELECT
                 w.wayptid,
                 w.lat,
                 w.long,
-                array_agg(DISTINCT m.megaid) AS matching_megaid_list
+                json_agg(
+                    json_build_object(
+                        'megaid', m.megaid,
+                        'type_ids', t.type_ids
+                    )
+                ) AS megas
             FROM
                 tbWaypt w
                 INNER JOIN tbmegastructure m ON w.wayptid = m.wayptid
+                INNER JOIN (
+                    SELECT
+                        mt.megaid,
+                        array_agg(DISTINCT mt.microbialitetypesid ORDER BY mt.microbialitetypesid) AS type_ids
+                    FROM
+                        tbjnmegamicrobialitetypes mt
+                    GROUP BY
+                        mt.megaid
+                ) t ON m.megaid = t.megaid
         `;
 
         let joinCondition = "";
         let whereCondition = "";
         let queryParams = [];
-
-        if (typeArray.length > 0) {
-            joinCondition += `
-                INNER JOIN (
-                    SELECT
-                        mt.megaid
-                    FROM
-                        tbjnmegamicrobialitetypes mt
-                    GROUP BY
-                        mt.megaid
-                    HAVING
-                        ARRAY_AGG(mt.microbialitetypesid ORDER BY mt.microbialitetypesid) = $1
-                ) AS filtered_megaids ON m.megaid = filtered_megaids.megaid
-            `;
-            queryParams.push(typeArray);
-        }
 
         if (periodPath) {
             joinCondition += `
@@ -73,6 +67,20 @@ const getAllFilteredWaypoints = async (req, res) => {
             `;
             whereCondition += ` WHERE gp.path LIKE $${queryParams.length + 1}`;
             queryParams.push(periodPath);
+        }
+
+        if (typeArray.length > 0) {
+            // Filter to ensure the result contains all types from typeArray
+            whereCondition += (whereCondition ? " AND " : " WHERE ") + `
+                m.megaid IN (
+                    SELECT mt.megaid
+                    FROM tbjnmegamicrobialitetypes mt
+                    WHERE mt.microbialitetypesid = ANY($${queryParams.length + 1})
+                    GROUP BY mt.megaid
+                    HAVING array_agg(mt.microbialitetypesid ORDER BY mt.microbialitetypesid) @> $${queryParams.length + 1}
+                )
+            `;
+            queryParams.push(typeArray);
         }
 
         query += joinCondition;
@@ -86,6 +94,8 @@ const getAllFilteredWaypoints = async (req, res) => {
         res.status(500).send("Failed to fetch filtered waypoints");
     }
 };
+
+
 
 const getAllPeriodNames = async (req, res) => {
     try {
