@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getAllWaypoints, getAllFilteredWaypoints,getAllPeriodNames} = require('../controllers/waypointController');
+const { getAllWaypoints, getAllFilteredWaypoints,getAllPeriodNames, test} = require('../controllers/waypointController');
 
 
 router.get('/get', getAllWaypoints);

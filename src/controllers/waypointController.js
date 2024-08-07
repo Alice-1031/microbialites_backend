@@ -12,6 +12,7 @@ const getAllWaypoints = async (req, res) => {
 
 const getAllFilteredWaypoints = async (req, res) => {
     const { types, period_name } = req.query;
+    console.log(period_name);
 
     // Convert types to an array of numbers, ensuring no invalid entries
     const typeArray = types ? types.split(',').map(type => {
@@ -106,7 +107,6 @@ const getAllPeriodNames = async (req, res) => {
         res.status(500).send("Failed to fetch period names");
     }
 };
-
 
 
 module.exports = {
