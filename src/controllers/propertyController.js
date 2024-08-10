@@ -25,6 +25,9 @@ const addProperty = async (req, res) => {
 
   try {
       let actualDataType = singleValuedDataType;
+      if(isMultiValued){
+        actualDataType = null;
+      }
       let actualLookupTableId = lookupTableId;
 
       // Handle the creation of a new lookup table or use an existing one
