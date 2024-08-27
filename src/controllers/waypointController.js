@@ -108,9 +108,39 @@ const getAllPeriodNames = async (req, res) => {
 };
 
 
+const getMegasAtWaypoint = async (req, res) => {
+    const { waypointId } = req.params; // Extract waypointId from the request parameters
+
+    try {
+        const query = `
+            SELECT megaid
+            FROM tbmegastructure
+            WHERE wayptid = $1;
+        `;
+
+        const { rows } = await db.query(query, [waypointId]);
+
+        // If no megaids are found for the given waypointId, return an empty array
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'No megas found for the given waypoint' });
+        }
+
+        // Extract megaids from the result rows
+        const megaIds = rows.map(row => row.megaid);
+
+        // Return the list of megaids as a JSON response
+        res.json({ megaIds });
+    } catch (error) {
+        console.error('Error fetching megas at waypoint:', error.message);
+        res.status(500).json({ error: 'Failed to fetch megas at waypoint' });
+    }
+};
+
+
 
 module.exports = {
     getAllWaypoints,
     getAllFilteredWaypoints,
-    getAllPeriodNames
+    getAllPeriodNames,
+    getMegasAtWaypoint
 }
