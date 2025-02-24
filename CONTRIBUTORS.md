@@ -11,7 +11,7 @@
   -Role: Supervising PI on microbialites database project; Professor of geology at the University of St. Thomas, St. Paul, MN
   -Contributions: Hiring coders; developing prototype database in MS Access; primary manager for project design
   
-
+ 
 ## Current Contributors
 
 ## How to Be Added

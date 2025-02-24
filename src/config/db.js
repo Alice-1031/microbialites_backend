@@ -28,4 +28,4 @@ const pool = new Pool(
 );
 
 // Export the pool object so that other modules can use it to query the database
-module.exports = pool;
+module.exports = pool; 
