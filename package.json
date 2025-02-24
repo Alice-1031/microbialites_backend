@@ -1,26 +1,64 @@
 {
+  // Name of your project/package
   "name": "microbialites_backend",
+
+  // Version of your project (follows semantic versioning: MAJOR.MINOR.PATCH)
   "version": "1.0.0",
+
+  // Short description of the project (currently empty)
   "description": "",
+
+  // Entry point of the application (default is usually "index.js")
   "main": "index.js",
+
+  // Custom scripts to run commands using `npm run <script-name>`
   "scripts": {
+    // Runs the backend server normally using Node.js
     "start": "node src/app.js",
+
+    // Runs the backend in development mode using nodemon (auto-restarts on file changes)
     "dev": "nodemon src/app.js"
   },
+
+  // Keywords for package discovery (currently empty, can be filled with relevant terms)
   "keywords": [],
+
+  // Author of the project (currently empty, can be filled with your name)
   "author": "",
+
+  // License type for the project (ISC is a permissive open-source license)
   "license": "ISC",
+
+  // Dependencies required for the project to run
   "dependencies": {
+    // Azure Blob Storage SDK for interacting with Azure cloud storage
     "@azure/storage-blob": "^12.24.0",
+
+    // Library for hashing and comparing passwords securely
     "bcrypt": "^5.1.1",
+
+    // Middleware to enable Cross-Origin Resource Sharing (CORS) for API requests
     "cors": "^2.8.5",
+
+    // Loads environment variables from a `.env` file into `process.env`
     "dotenv": "^16.4.5",
+
+    // Express.js framework for handling HTTP requests
     "express": "^4.19.2",
+
+    // Library for generating and verifying JSON Web Tokens (JWTs) for authentication
     "jsonwebtoken": "^9.0.2",
+
+    // PostgreSQL client for Node.js
     "pg": "^8.12.0",
+
+    // A promise-based wrapper for PostgreSQL that simplifies queries
     "pg-promise": "^11.9.0"
   },
+
+  // Development-only dependencies (not included in production)
   "devDependencies": {
+    // Utility that restarts the server automatically when file changes are detected
     "nodemon": "^3.1.4"
   }
 }
